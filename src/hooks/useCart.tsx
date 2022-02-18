@@ -1,4 +1,5 @@
-import { createContext, ReactNode, useContext, useState } from 'react';
+import { resolve } from 'dns';
+import { createContext, ReactNode, useContext, useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import { api } from '../services/api';
 import { Product, Stock } from '../types';
@@ -21,30 +22,94 @@ interface CartContextData {
 
 const CartContext = createContext<CartContextData>({} as CartContextData);
 
-export function CartProvider({ children }: CartProviderProps): JSX.Element {
-  const [cart, setCart] = useState<Product[]>(() => {
-    // const storagedCart = Buscar dados do localStorage
 
-    // if (storagedCart) {
-    //   return JSON.parse(storagedCart);
-    // }
+export function CartProvider({ children }: CartProviderProps): JSX.Element {
+
+
+  const [cart, setCart] = useState<Product[]>(() => {
+    const storagedCart = localStorage.getItem('@RocketShoes:cart');
+
+    if (storagedCart) {
+      return JSON.parse(storagedCart);
+    }
 
     return [];
   });
 
+  const prevCartRef = useRef<Product[]>();
+
+  //Atualizar o localStorage todas as vezes que alterar a variavel cart============================
+  useEffect(() =>{
+    //O segredo é que useRef não se rerenderiza quando é modificado por isso pode ser usado com useEffect sem array de dependencias
+    prevCartRef.current = cart;
+    //console.log("Entrou", prevCartRef.current,cartPreviuosValue, cart);
+  });
+
+  const cartPreviuosValue = prevCartRef.current ?? cart;//se o primeiro agrumento for nulo ou undefined pega o segundo
+
+  //console.log("X",prevCartRef.current,cartPreviuosValue, cart)
+
+  useEffect(() => {
+    //console.log("Entrou2",prevCartRef.current,cartPreviuosValue, cart);
+    if(cartPreviuosValue !== cart){
+      localStorage.setItem('@RocketShoes:cart', JSON.stringify(cart));
+    }
+  }, [cart, cartPreviuosValue]);
+  //FIM Atualizar o localStorage todas as vezes que alterar a variavel cart=========================
+
+
   const addProduct = async (productId: number) => {
     try {
-      // TODO
+      const updateCart = [...cart];
+      const productExists = updateCart.find(product => product.id === productId );
+
+      const stock = await api.get(`stock/${productId}`);
+      const stockAmount = stock.data.amount;
+      const currentAmount = productExists ? productExists.amount : 0;
+      const amount = currentAmount + 1;
+
+      if(amount > stockAmount){
+        toast.error('Quantidade solicitada fora de estoque');
+        return;
+      }
+
+      if(productExists){
+        productExists.amount = amount;
+      } 
+      else {
+        const product = await api.get(`products/${productId}`);
+        const newProduct = {
+          ...product.data,
+          amount: 1
+        }
+        updateCart.push(newProduct);
+      }
+
+      setCart(updateCart);
+
     } catch {
-      // TODO
+      toast.error('Erro na adição do produto');
     }
   };
 
   const removeProduct = (productId: number) => {
     try {
-      // TODO
+      const updateCart = [...cart];
+      //const productExists = updateCart.find(product => product.id === productId);
+      const productIndex = updateCart.findIndex(product => product.id === productId);
+
+      if(productIndex >= 0){
+        //const newCart = updateCart.filter(product => product.id !== productId);
+        updateCart.splice(productIndex,1);
+        setCart(updateCart);
+      }
+      else{
+        throw Error();
+      }
+
+
     } catch {
-      // TODO
+      toast.error('Erro na remoção do produto');
     }
   };
 
@@ -53,9 +118,25 @@ export function CartProvider({ children }: CartProviderProps): JSX.Element {
     amount,
   }: UpdateProductAmount) => {
     try {
-      // TODO
+      const updateCart = [...cart];
+      const productExists = updateCart.find(product => product.id === productId );
+      const stock: Stock = await api.get(`stock/${productId}`).then(Response => Response.data);
+
+      if(amount <= 0 ){
+        return;
+      }else if (amount > stock.amount){
+        toast.error('Quantidade solicitada fora de estoque');
+        return;
+      }
+
+      if(productExists) {
+        productExists.amount = amount;
+        setCart(updateCart);
+      }else {
+        throw Error();
+      }
     } catch {
-      // TODO
+      toast.error('Erro na alteração de quantidade do produto');
     }
   };
 
